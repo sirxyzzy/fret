@@ -1,7 +1,7 @@
 //! An almost exact copy of the example of a custom drawing widget from Druid itself
 //! We plan to draw tablature
 
-use druid::kurbo::BezPath;
+use druid::kurbo::{BezPath, Line};
 use druid::piet::{FontFamily, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::widget::prelude::*;
 use druid::{
@@ -9,12 +9,16 @@ use druid::{
     WindowDesc,
 };
 
-struct CustomWidget;
+struct TablatureWidget;
+
+impl TablatureWidget {
+    pub const STRINGCOLOR: Color = Color::rgb8(0, 128, 0);
+}
 
 // If this widget has any child widgets it should call its event, update and layout
 // (and lifecycle) methods as well to make sure it works. Some things can be filtered,
 // but a general rule is to just pass it through unless you really know you don't want it.
-impl Widget<String> for CustomWidget {
+impl Widget<String> for TablatureWidget {
     fn event(&mut self, _ctx: &mut EventCtx, _event: &Event, _data: &mut String, _env: &Env) {}
 
     fn lifecycle(
@@ -66,34 +70,23 @@ impl Widget<String> for CustomWidget {
         let rect = size.to_rect();
         ctx.fill(rect, &Color::WHITE);
 
-        // We can paint with a Z index, this indicates that this code will be run
-        // after the rest of the painting. Painting with z-index is done in order,
-        // so first everything with z-index 1 is painted and then with z-index 2 etc.
-        // As you can see this(red) curve is drawn on top of the green curve
-        ctx.paint_with_z_index(1, move |ctx| {
-            let mut path = BezPath::new();
-            path.move_to((0.0, size.height));
-            path.quad_to((40.0, 50.0), (size.width, 0.0));
-            // Create a color
-            let stroke_color = Color::rgb8(128, 0, 0);
-            // Stroke the path with thickness 1.0
-            ctx.stroke(path, &stroke_color, 5.0);
-        });
+        let line_delta = size.height / 7.0;
+        let mut line_y = line_delta; // Kinda hack, should be neck margin
 
-        // Create an arbitrary bezier path
-        let mut path = BezPath::new();
-        path.move_to(Point::ORIGIN);
-        path.quad_to((40.0, 50.0), (size.width, size.height));
-        // Create a color
-        let stroke_color = Color::rgb8(0, 128, 0);
-        // Stroke the path with thickness 5.0
-        ctx.stroke(path, &stroke_color, 5.0);
+        for _i in 0..6 {
+            ctx.stroke(
+                Line::new((0.0, line_y), (size.width, line_y)),
+                &Self::STRINGCOLOR,
+                4.0,
+            );
+            line_y += line_delta;
+        }
 
         // Rectangles: the path for practical people
-        let rect = Rect::from_origin_size((10.0, 10.0), (100.0, 100.0));
-        // Note the Color:rgba8 which includes an alpha channel (7F in this case)
-        let fill_color = Color::rgba8(0x00, 0x00, 0x00, 0x7F);
-        ctx.fill(rect, &fill_color);
+        let nut_rect = Rect::new(0.0, 0.0, line_delta / 5.0, size.height);
+        // My nuts are black
+        let fill_color = Color::rgb8(0x00, 0x00, 0x00);
+        ctx.fill(nut_rect, &fill_color);
 
         // Text is easy; in real use TextLayout should either be stored in the
         // widget and reused, or a label child widget to manage it all.
@@ -137,7 +130,7 @@ impl Widget<String> for CustomWidget {
 }
 
 pub fn main() {
-    let window = WindowDesc::new(|| CustomWidget {}).title(LocalizedString::new("fret"));
+    let window = WindowDesc::new(|| TablatureWidget {}).title(LocalizedString::new("fret"));
     AppLauncher::with_window(window)
         .use_simple_logger()
         .launch("Druid + Piet + Bleeding Fingers".to_string())
