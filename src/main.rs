@@ -9,10 +9,55 @@ use druid::{
     WindowDesc,
 };
 
-struct TablatureWidget;
+struct FretNumber(u32);
+
+struct StringNumber(u32);
+
+/// How many beats in a bar, so 4, for 4:4 time and two for 2:4 time
+struct BeatsPerBar(u32);
+
+/// The duration of one beat, usually a power of two, a crotchet for 2:4 or 4:4
+struct NoteValue(u32);
+
+struct Signature {
+    bpb: BeatsPerBar,
+    value: NoteValue,
+}
+
+/// The units here are beats, we allow for fractional positions, such as half a beat
+struct BarPosition(f64);
+
+/// A notation gives a fret, a string, and a bar position
+enum Action {
+    Unused(),
+    Simple(),
+    Muted(),
+}
+struct Notation {
+    fret: FretNumber,
+    action: Action,
+}
+struct Chord {
+    notations: Vec<Notation>, // One per string
+    position: BarPosition,
+}
+
+struct Bar {
+    size: f64, // relative, 1.0 == default, 2.0 == twice default, etc...
+    signature: Signature,
+    notations: Vec<Notation>,
+}
+
+struct TablatureWidget {
+    bars: Vec<Bar>,
+}
 
 impl TablatureWidget {
-    pub const STRINGCOLOR: Color = Color::rgb8(0, 128, 0);
+    pub const STRING_COLOR: Color = Color::rgb8(0, 128, 0);
+
+    pub fn new() -> TablatureWidget {
+        TablatureWidget { bars: Vec::new() }
+    }
 }
 
 // If this widget has any child widgets it should call its event, update and layout
@@ -70,13 +115,15 @@ impl Widget<String> for TablatureWidget {
         let rect = size.to_rect();
         ctx.fill(rect, &Color::WHITE);
 
+        for bar in &self.bars {}
+
         let line_delta = size.height / 7.0;
         let mut line_y = line_delta; // Kinda hack, should be neck margin
 
         for _i in 0..6 {
             ctx.stroke(
                 Line::new((0.0, line_y), (size.width, line_y)),
-                &Self::STRINGCOLOR,
+                &Self::STRING_COLOR,
                 4.0,
             );
             line_y += line_delta;
@@ -91,10 +138,12 @@ impl Widget<String> for TablatureWidget {
         // Text is easy; in real use TextLayout should either be stored in the
         // widget and reused, or a label child widget to manage it all.
         // This is one way of doing it, you can also use a builder-style way.
-        let mut layout = TextLayout::<String>::from_text(data);
-        layout.set_font(FontDescriptor::new(FontFamily::SERIF).with_size(24.0));
-        layout.set_text_color(fill_color);
+        let mut layout = new_text_layout(data);
         layout.rebuild_if_needed(ctx.text(), env);
+        for i in 0..10 {
+            let x = i as f64;
+            layout.draw(ctx, (80.0 + (x * 10.0), 40.0 + (x * 15.0)));
+        }
 
         // Let's rotate our text slightly. First we save our current (default) context:
         ctx.with_save(|ctx| {
@@ -127,14 +176,94 @@ impl Widget<String> for TablatureWidget {
         // The image is automatically scaled to fit the rect you pass to draw_image
         ctx.draw_image(&image, size.to_rect(), InterpolationMode::Bilinear);
     }
+
+    // // The paint method gets called last, after an event flow.
+    // // It goes event -> update -> layout -> paint, and each method can influence the next.
+    // // Basically, anything that changes the appearance of a widget causes a paint.
+    // fn _paint_old(&mut self, ctx: &mut PaintCtx, data: &String, env: &Env) {
+    //     // Clear the whole widget with the color of your choice
+    //     // (ctx.size() returns the size of the layout rect we're painting in)
+    //     // Note: ctx also has a `clear` method, but that clears the whole context,
+    //     // and we only want to clear this widget's area.
+    //     let size = ctx.size();
+    //     let rect = size.to_rect();
+    //     ctx.fill(rect, &Color::WHITE);
+
+    //     let line_delta = size.height / 7.0;
+    //     let mut line_y = line_delta; // Kinda hack, should be neck margin
+
+    //     for _i in 0..6 {
+    //         ctx.stroke(
+    //             Line::new((0.0, line_y), (size.width, line_y)),
+    //             &Self::STRING_COLOR,
+    //             4.0,
+    //         );
+    //         line_y += line_delta;
+    //     }
+
+    //     // Rectangles: the path for practical people
+    //     let nut_rect = Rect::new(0.0, 0.0, line_delta / 5.0, size.height);
+    //     // My nuts are black
+    //     let fill_color = Color::rgb8(0x00, 0x00, 0x00);
+    //     ctx.fill(nut_rect, &fill_color);
+
+    //     // Text is easy; in real use TextLayout should either be stored in the
+    //     // widget and reused, or a label child widget to manage it all.
+    //     // This is one way of doing it, you can also use a builder-style way.
+    //     let mut layout = new_text_layout(data);
+    //     layout.rebuild_if_needed(ctx.text(), env);
+    //     for i in 0..10 {
+    //         let x = i as f64;
+    //         layout.draw(ctx, (80.0 + (x * 10.0), 40.0 + (x * 15.0)));
+    //     }
+
+    //     // Let's rotate our text slightly. First we save our current (default) context:
+    //     ctx.with_save(|ctx| {
+    //         // Now we can rotate the context (or set a clip path, for instance):
+    //         // This makes it so that anything drawn after this (in the closure) is
+    //         // transformed.
+    //         // The transformation is in radians, but be aware it transforms the canvas,
+    //         // not just the part you are drawing. So we draw at (80.0, 40.0) on the rotated
+    //         // canvas, this is NOT the same position as (80.0, 40.0) on the original canvas.
+    //         ctx.transform(Affine::rotate(std::f64::consts::FRAC_PI_4));
+    //         layout.draw(ctx, (80.0, 40.0));
+    //     });
+    //     // When we exit with_save, the original context's rotation is restored
+
+    //     // This is the builder-style way of drawing text.
+    //     let text = ctx.text();
+    //     let layout = text
+    //         .new_text_layout(data.clone())
+    //         .font(FontFamily::SERIF, 24.0)
+    //         .text_color(Color::rgb8(128, 0, 0))
+    //         .build()
+    //         .unwrap();
+    //     ctx.draw_text(&layout, (100.0, 25.0));
+
+    //     // Let's burn some CPU to make a (partially transparent) image buffer
+    //     let image_data = make_image_data(256, 256);
+    //     let image = ctx
+    //         .make_image(256, 256, &image_data, ImageFormat::RgbaSeparate)
+    //         .unwrap();
+    //     // The image is automatically scaled to fit the rect you pass to draw_image
+    //     ctx.draw_image(&image, size.to_rect(), InterpolationMode::Bilinear);
+    // }
 }
 
 pub fn main() {
-    let window = WindowDesc::new(|| TablatureWidget {}).title(LocalizedString::new("fret"));
+    let window = WindowDesc::new(TablatureWidget::new()).title(LocalizedString::new("fret"));
     AppLauncher::with_window(window)
         .use_simple_logger()
         .launch("Druid + Piet + Bleeding Fingers".to_string())
         .expect("launch failed");
+}
+
+fn new_text_layout(data: &str) -> TextLayout<String> {
+    let fill_color = Color::rgb8(0x00, 0x00, 0x00);
+    let mut layout = TextLayout::<String>::from_text(data);
+    layout.set_font(FontDescriptor::new(FontFamily::SERIF).with_size(24.0));
+    layout.set_text_color(fill_color);
+    layout
 }
 
 fn make_image_data(width: usize, height: usize) -> Vec<u8> {
