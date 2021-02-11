@@ -1,13 +1,17 @@
 //! An almost exact copy of the example of a custom drawing widget from Druid itself
 //! We plan to draw tablature
+use core::f64;
 
-use druid::kurbo::{BezPath, Line};
+use druid::kurbo::Line;
 use druid::piet::{FontFamily, ImageFormat, InterpolationMode, Text, TextLayoutBuilder};
 use druid::widget::prelude::*;
 use druid::{
-    Affine, AppLauncher, Color, FontDescriptor, LocalizedString, Point, Rect, TextLayout,
-    WindowDesc,
+    Affine, AppLauncher, Color, FontDescriptor, LocalizedString, Rect, TextLayout, WindowDesc,
 };
+
+use std::sync::Arc;
+
+use num::rational::Rational32;
 
 struct FretNumber(u32);
 
@@ -24,13 +28,34 @@ struct Signature {
     value: NoteValue,
 }
 
+/// An ugly little helper, approximate a rational
+/// by a float, this is potentially lossy, consider 1/3 => 1.33333...
+fn as_float(r: &Rational32) -> f64 {
+    (*(r.numer()) as f64) / (*(r.denom()) as f64)
+}
+
 /// The units here are beats, we allow for fractional positions, such as half a beat
-struct BarPosition(f64);
+/// and for accuracy store that as a private ratio n/d
+struct BarPosition(Rational32);
+
+impl BarPosition {
+    fn new() -> BarPosition {
+        BarPosition(num::zero())
+    }
+
+    fn from_ratio(n: i32, d: i32) -> BarPosition {
+        BarPosition(Rational32::new(n, d))
+    }
+
+    fn as_float(&self) -> f64 {
+        as_float(&self.0)
+    }
+}
 
 /// A notation gives a fret, a string, and a bar position
 enum Action {
     Unused(),
-    Simple(),
+    Simple(BarPosition),
     Muted(),
 }
 struct Notation {
@@ -48,40 +73,51 @@ struct Bar {
     notations: Vec<Notation>,
 }
 
-struct TablatureWidget {
-    bars: Vec<Bar>,
+#[derive(Clone, Data)]
+struct AppData {
+    bars: Arc<Vec<Bar>>,
 }
+
+impl AppData {
+    pub fn new() -> AppData {
+        AppData {
+            bars: Arc::new(Vec::new()),
+        }
+    }
+}
+
+struct TablatureWidget {}
 
 impl TablatureWidget {
     pub const STRING_COLOR: Color = Color::rgb8(0, 128, 0);
 
     pub fn new() -> TablatureWidget {
-        TablatureWidget { bars: Vec::new() }
+        TablatureWidget {}
     }
 }
 
 // If this widget has any child widgets it should call its event, update and layout
 // (and lifecycle) methods as well to make sure it works. Some things can be filtered,
 // but a general rule is to just pass it through unless you really know you don't want it.
-impl Widget<String> for TablatureWidget {
-    fn event(&mut self, _ctx: &mut EventCtx, _event: &Event, _data: &mut String, _env: &Env) {}
+impl Widget<AppData> for TablatureWidget {
+    fn event(&mut self, _ctx: &mut EventCtx, _event: &Event, _data: &mut AppData, _env: &Env) {}
 
     fn lifecycle(
         &mut self,
         _ctx: &mut LifeCycleCtx,
         _event: &LifeCycle,
-        _data: &String,
+        _data: &AppData,
         _env: &Env,
     ) {
     }
 
-    fn update(&mut self, _ctx: &mut UpdateCtx, _old_data: &String, _data: &String, _env: &Env) {}
+    fn update(&mut self, _ctx: &mut UpdateCtx, _old_data: &AppData, _data: &AppData, _env: &Env) {}
 
     fn layout(
         &mut self,
         _layout_ctx: &mut LayoutCtx,
         bc: &BoxConstraints,
-        _data: &String,
+        _data: &AppData,
         _env: &Env,
     ) -> Size {
         // BoxConstraints are passed by the parent widget.
@@ -106,7 +142,7 @@ impl Widget<String> for TablatureWidget {
     // The paint method gets called last, after an event flow.
     // It goes event -> update -> layout -> paint, and each method can influence the next.
     // Basically, anything that changes the appearance of a widget causes a paint.
-    fn paint(&mut self, ctx: &mut PaintCtx, data: &String, env: &Env) {
+    fn paint(&mut self, ctx: &mut PaintCtx, data: &AppData, env: &Env) {
         // Clear the whole widget with the color of your choice
         // (ctx.size() returns the size of the layout rect we're painting in)
         // Note: ctx also has a `clear` method, but that clears the whole context,
@@ -115,7 +151,7 @@ impl Widget<String> for TablatureWidget {
         let rect = size.to_rect();
         ctx.fill(rect, &Color::WHITE);
 
-        for bar in &self.bars {}
+        for bar in data.bars.iter() {}
 
         let line_delta = size.height / 7.0;
         let mut line_y = line_delta; // Kinda hack, should be neck margin
@@ -138,7 +174,7 @@ impl Widget<String> for TablatureWidget {
         // Text is easy; in real use TextLayout should either be stored in the
         // widget and reused, or a label child widget to manage it all.
         // This is one way of doing it, you can also use a builder-style way.
-        let mut layout = new_text_layout(data);
+        let mut layout = new_text_layout("Whoops no data");
         layout.rebuild_if_needed(ctx.text(), env);
         for i in 0..10 {
             let x = i as f64;
@@ -161,7 +197,7 @@ impl Widget<String> for TablatureWidget {
         // This is the builder-style way of drawing text.
         let text = ctx.text();
         let layout = text
-            .new_text_layout(data.clone())
+            .new_text_layout("Still no data!!")
             .font(FontFamily::SERIF, 24.0)
             .text_color(Color::rgb8(128, 0, 0))
             .build()
@@ -254,7 +290,7 @@ pub fn main() {
     let window = WindowDesc::new(TablatureWidget::new()).title(LocalizedString::new("fret"));
     AppLauncher::with_window(window)
         .use_simple_logger()
-        .launch("Druid + Piet + Bleeding Fingers".to_string())
+        .launch(AppData::new())
         .expect("launch failed");
 }
 
